@@ -196,6 +196,11 @@ void print_cs_onesComp(struct cgw_csum_1comp *cs_onesComp)
 	printf("-1 %d ", cs_onesComp->result_idx);
 }
 
+void print_cs_twosComp(struct cgw_csum_2comp *cs_twosComp)
+{
+	printf("-2 %d ", cs_twosComp->result_idx);
+}
+
 void print_counter(struct cgw_counter *msgcounter)
 {
 	printf("-n %d:%d:%d ",
@@ -225,6 +230,7 @@ void print_usage(char *prg)
 	fprintf(stderr, "           -p <profile>:[<profile_data>] (CRC8 checksum profile & parameters)\n");
 	fprintf(stderr, "           -a <from_idx>:<to_idx>:<result_idx> (SUM cs)\n");
 	fprintf(stderr, "           -1 <result> (1s compliment cs)\n");
+	fprintf(stderr, "           -2 <result> (2s compliment cs)\n");
 	fprintf(stderr, "\nValues are given and expected in hexadecimal values. Leading 0s can be omitted.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "<filter> is a <value><mask> CAN identifier filter\n");
@@ -448,6 +454,7 @@ int parse_rtlist(char *prgname, unsigned char *rxbuf, int len)
 			case CGW_CS_CRC8:
 			case CGW_CS_SUM:
 			case CGW_CS_1COMP:
+			case CGW_CS_2COMP:
 				break;
 
 			case CGW_SRC_IF:
@@ -546,6 +553,10 @@ int parse_rtlist(char *prgname, unsigned char *rxbuf, int len)
 				print_cs_onesComp((struct cgw_csum_1comp *)RTA_DATA(rta));
 				break;
 
+			case CGW_CS_2COMP:
+				print_cs_twosComp((struct cgw_csum_2comp *)RTA_DATA(rta));
+				break;
+
 			case CGW_SRC_IF:
 			case CGW_DST_IF:
 			case CGW_HANDLED:
@@ -584,6 +595,7 @@ int main(int argc, char **argv)
 	int have_cs_crc8 = 0;
 	int have_cs_sum = 0;
 	int have_cs_1comp = 0;
+	int have_cs_2comp = 0;
 
 	struct {
 		struct nlmsghdr nh;
@@ -611,6 +623,7 @@ int main(int argc, char **argv)
 	char crc8tab[513] = {0};
 	struct cgw_csum_sum cs_sum;
 	struct cgw_csum_1comp cs_1comp;
+	struct cgw_csum_2comp cs_2comp;
 
 	struct modattr modmsg[CGW_MOD_FUNCS];
 	int modidx = 0;
@@ -622,8 +635,9 @@ int main(int argc, char **argv)
 	memset(&cs_crc8, 0, sizeof(cs_crc8));
 	memset(&cs_sum, 0, sizeof(cs_sum));
 	memset(&cs_1comp, 0, sizeof(cs_1comp));
+	memset(&cs_2comp, 0, sizeof(cs_2comp));
 
-	while ((opt = getopt(argc, argv, "ADFLs:d:teiu:l:f:c:p:n:x:a:1:m:?")) != -1) {
+	while ((opt = getopt(argc, argv, "ADFLs:d:teiu:l:f:c:p:n:x:a:1:2:m:?")) != -1) {
 		switch (opt) {
 
 		case 'A':
@@ -755,6 +769,16 @@ int main(int argc, char **argv)
 				exit(1);
 			}
 			break;
+
+		case '2':	// perform 2s complement on result_idx
+			if ((sscanf(optarg, "%hhd", &cs_2comp.result_idx) == 1)) {
+				have_cs_2comp = 1;
+			} else {
+				printf("Bad 2s complement checksum definition '%s'.\n", optarg);
+				exit(1);
+			}
+			break;
+
 		case 'n':	// increment result_idx by one each time that a message is sent, rolling over at max
 			if ((sscanf(optarg, "%hhd:%hhd:%hhd",
 				    &msgcounter.result_idx, &msgcounter.max_count,
@@ -785,8 +809,8 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (!modidx && (have_counter || have_cs_crc8 || have_cs_xor || have_cs_sum || have_cs_1comp)) {
-		printf("-n or -c or -x or -a or -1 can only be used in conjunction with -m\n");
+	if (!modidx && (have_counter || have_cs_crc8 || have_cs_xor || have_cs_sum || have_cs_1comp || have_cs_2comp)) {
+		printf("-n or -c or -x or -a or -1 or -2 can only be used in conjunction with -m\n");
 		exit(1);
 	}
 
@@ -852,6 +876,9 @@ int main(int argc, char **argv)
 
 	if (have_cs_1comp)
 		addattr_l(&req.nh, sizeof(req), CGW_CS_1COMP, &cs_1comp, sizeof(cs_1comp));
+
+	if (have_cs_2comp)
+		addattr_l(&req.nh, sizeof(req), CGW_CS_2COMP, &cs_2comp, sizeof(cs_2comp));
 
 	if (uid)
 		addattr_l(&req.nh, sizeof(req), CGW_MOD_UID, &uid, sizeof(__u32));
