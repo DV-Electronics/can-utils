@@ -707,13 +707,9 @@ int main(int argc, char **argv)
 			break;
 
 		case 'n':	// increment result_idx by one each time that a message is sent, rolling over at max
-			printf("counter args '%s'.\n", optarg);
 			if ((sscanf(optarg, "%hhd:%hhd:%hhd",
 				    &msgcounter.result_idx, &msgcounter.max_count,
 				    &msgcounter.value) == 3)) {
-				printf("counter result @ '%d'.\n", msgcounter.result_idx);
-				printf("counter max '%d'.\n", msgcounter.max_count);
-				printf("counter value '%d'.\n", msgcounter.value);
 				have_counter = 1;
 			} else {
 				printf("Bad counter definition '%s'.\n", optarg);
