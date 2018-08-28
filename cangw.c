@@ -184,6 +184,13 @@ void print_cs_crc8(struct cgw_csum_crc8 *cs_crc8)
 		print_cs_crc8_profile(cs_crc8);
 }
 
+void print_counter(struct cgw_counter *msgcounter)
+{
+	printf("-n %d:%d:%d ",
+	       msgcounter->result_idx, msgcounter->max_count,
+		msgcounter->value);
+}
+
 void print_usage(char *prg)
 {
 	fprintf(stderr, "\nUsage: %s [options]\n\n", prg);
@@ -200,6 +207,7 @@ void print_usage(char *prg)
 	fprintf(stderr, "           -l <hops> (limit the number of frame hops / routings)\n");
 	fprintf(stderr, "           -f <filter> (set CAN filter)\n");
 	fprintf(stderr, "           -m <mod> (set frame modifications)\n");
+	fprintf(stderr, "           -n <result_idx>:<max_count>:<value> (message counter)\n");
 	fprintf(stderr, "           -x <from_idx>:<to_idx>:<result_idx>:<init_xor_val> (XOR checksum)\n");
 	fprintf(stderr, "           -c <from>:<to>:<result>:<init_val>:<xor_val>:<crctab[256]> (CRC8 cs)\n");
 	fprintf(stderr, "           -p <profile>:[<profile_data>] (CRC8 checksum profile & parameters)\n");
@@ -421,6 +429,7 @@ int parse_rtlist(char *prgname, unsigned char *rxbuf, int len)
 			case CGW_MOD_SET:
 			case CGW_MOD_UID:
 			case CGW_LIM_HOPS:
+			case CGW_COUNTER:
 			case CGW_CS_XOR:
 			case CGW_CS_CRC8:
 				break;
@@ -501,6 +510,10 @@ int parse_rtlist(char *prgname, unsigned char *rxbuf, int len)
 				printf("-l %d ", *(__u8 *)RTA_DATA(rta));
 				break;
 
+			case CGW_COUNTER:
+				print_counter((struct cgw_counter *)RTA_DATA(rta));
+				break;
+
 			case CGW_CS_XOR:
 				print_cs_xor((struct cgw_csum_xor *)RTA_DATA(rta));
 				break;
@@ -542,6 +555,7 @@ int main(int argc, char **argv)
 
 	int cmd = UNSPEC;
 	int have_filter = 0;
+	int have_counter = 0;
 	int have_cs_xor = 0;
 	int have_cs_crc8 = 0;
 
@@ -565,6 +579,7 @@ int main(int argc, char **argv)
 	struct can_filter filter;
 	struct sockaddr_nl nladdr;
 
+	struct cgw_counter msgcounter;
 	struct cgw_csum_xor cs_xor;
 	struct cgw_csum_crc8 cs_crc8;
 	char crc8tab[513] = {0};
@@ -574,10 +589,11 @@ int main(int argc, char **argv)
 	int i;
 
 	memset(&req, 0, sizeof(req));
+	memset(&msgcounter, 0, sizeof(msgcounter));
 	memset(&cs_xor, 0, sizeof(cs_xor));
 	memset(&cs_crc8, 0, sizeof(cs_crc8));
 
-	while ((opt = getopt(argc, argv, "ADFLs:d:teiu:l:f:c:p:x:m:?")) != -1) {
+	while ((opt = getopt(argc, argv, "ADFLs:d:teiu:l:f:c:p:n:x:m:?")) != -1) {
 		switch (opt) {
 
 		case 'A':
@@ -690,6 +706,21 @@ int main(int argc, char **argv)
 			exit(0);
 			break;
 
+		case 'n':	// increment result_idx by one each time that a message is sent, rolling over at max
+			printf("counter args '%s'.\n", optarg);
+			if ((sscanf(optarg, "%hhd:%hhd:%hhd",
+				    &msgcounter.result_idx, &msgcounter.max_count,
+				    &msgcounter.value) == 3)) {
+				printf("counter result @ '%d'.\n", msgcounter.result_idx);
+				printf("counter max '%d'.\n", msgcounter.max_count);
+				printf("counter value '%d'.\n", msgcounter.value);
+				have_counter = 1;
+			} else {
+				printf("Bad counter definition '%s'.\n", optarg);
+				exit(1);
+			}
+			break;
+
 		default:
 			fprintf(stderr, "Unknown option %c\n", opt);
 			print_usage(basename(argv[0]));
@@ -709,8 +740,8 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (!modidx && (have_cs_crc8 || have_cs_xor)) {
-		printf("-c or -x can only be used in conjunction with -m\n");
+	if (!modidx && (have_counter || have_cs_crc8 || have_cs_xor)) {
+		printf("-n or -c or -x can only be used in conjunction with -m\n");
 		exit(1);
 	}
 
@@ -761,6 +792,9 @@ int main(int argc, char **argv)
 
 	if (have_filter)
 		addattr_l(&req.nh, sizeof(req), CGW_FILTER, &filter, sizeof(filter));
+
+	if (have_counter)
+		addattr_l(&req.nh, sizeof(req), CGW_COUNTER, &msgcounter, sizeof(msgcounter));
 
 	if (have_cs_crc8)
 		addattr_l(&req.nh, sizeof(req), CGW_CS_CRC8, &cs_crc8, sizeof(cs_crc8));
