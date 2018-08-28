@@ -184,6 +184,13 @@ void print_cs_crc8(struct cgw_csum_crc8 *cs_crc8)
 		print_cs_crc8_profile(cs_crc8);
 }
 
+void print_cs_sum(struct cgw_csum_sum *cs_sum)
+{
+	printf("-a %d:%d:%d ",
+	       cs_sum->from_idx, cs_sum->to_idx,
+	       cs_sum->result_idx);
+}
+
 void print_counter(struct cgw_counter *msgcounter)
 {
 	printf("-n %d:%d:%d ",
@@ -211,6 +218,7 @@ void print_usage(char *prg)
 	fprintf(stderr, "           -x <from_idx>:<to_idx>:<result_idx>:<init_xor_val> (XOR checksum)\n");
 	fprintf(stderr, "           -c <from>:<to>:<result>:<init_val>:<xor_val>:<crctab[256]> (CRC8 cs)\n");
 	fprintf(stderr, "           -p <profile>:[<profile_data>] (CRC8 checksum profile & parameters)\n");
+	fprintf(stderr, "           -a <from_idx>:<to_idx>:<result_idx> (SUM cs)\n");
 	fprintf(stderr, "\nValues are given and expected in hexadecimal values. Leading 0s can be omitted.\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "<filter> is a <value><mask> CAN identifier filter\n");
@@ -432,6 +440,7 @@ int parse_rtlist(char *prgname, unsigned char *rxbuf, int len)
 			case CGW_COUNTER:
 			case CGW_CS_XOR:
 			case CGW_CS_CRC8:
+			case CGW_CS_SUM:
 				break;
 
 			case CGW_SRC_IF:
@@ -522,6 +531,10 @@ int parse_rtlist(char *prgname, unsigned char *rxbuf, int len)
 				print_cs_crc8((struct cgw_csum_crc8 *)RTA_DATA(rta));
 				break;
 
+			case CGW_CS_SUM:
+				print_cs_sum((struct cgw_csum_sum *)RTA_DATA(rta));
+				break;
+
 			case CGW_SRC_IF:
 			case CGW_DST_IF:
 			case CGW_HANDLED:
@@ -558,6 +571,7 @@ int main(int argc, char **argv)
 	int have_counter = 0;
 	int have_cs_xor = 0;
 	int have_cs_crc8 = 0;
+	int have_cs_sum = 0;
 
 	struct {
 		struct nlmsghdr nh;
@@ -583,6 +597,7 @@ int main(int argc, char **argv)
 	struct cgw_csum_xor cs_xor;
 	struct cgw_csum_crc8 cs_crc8;
 	char crc8tab[513] = {0};
+	struct cgw_csum_sum cs_sum;
 
 	struct modattr modmsg[CGW_MOD_FUNCS];
 	int modidx = 0;
@@ -592,8 +607,9 @@ int main(int argc, char **argv)
 	memset(&msgcounter, 0, sizeof(msgcounter));
 	memset(&cs_xor, 0, sizeof(cs_xor));
 	memset(&cs_crc8, 0, sizeof(cs_crc8));
+	memset(&cs_sum, 0, sizeof(cs_sum));
 
-	while ((opt = getopt(argc, argv, "ADFLs:d:teiu:l:f:c:p:n:x:m:?")) != -1) {
+	while ((opt = getopt(argc, argv, "ADFLs:d:teiu:l:f:c:p:n:x:a:m:?")) != -1) {
 		switch (opt) {
 
 		case 'A':
@@ -706,6 +722,17 @@ int main(int argc, char **argv)
 			exit(0);
 			break;
 
+		case 'a':	// add bytes from from_idx to to_idx, placing result in result_idx
+			if ((sscanf(optarg, "%hhd:%hhd:%hhd",
+				    &cs_sum.from_idx, &cs_sum.to_idx,
+				    &cs_sum.result_idx) == 3)) {
+				have_cs_sum = 1;
+			} else {
+				printf("Bad SUM checksum definition '%s'.\n", optarg);
+				exit(1);
+			}
+			break;
+
 		case 'n':	// increment result_idx by one each time that a message is sent, rolling over at max
 			if ((sscanf(optarg, "%hhd:%hhd:%hhd",
 				    &msgcounter.result_idx, &msgcounter.max_count,
@@ -736,8 +763,8 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (!modidx && (have_counter || have_cs_crc8 || have_cs_xor)) {
-		printf("-n or -c or -x can only be used in conjunction with -m\n");
+	if (!modidx && (have_counter || have_cs_crc8 || have_cs_xor || have_cs_sum)) {
+		printf("-n or -c or -x or -a can only be used in conjunction with -m\n");
 		exit(1);
 	}
 
@@ -797,6 +824,9 @@ int main(int argc, char **argv)
 
 	if (have_cs_xor)
 		addattr_l(&req.nh, sizeof(req), CGW_CS_XOR, &cs_xor, sizeof(cs_xor));
+
+	if (have_cs_sum)
+		addattr_l(&req.nh, sizeof(req), CGW_CS_SUM, &cs_sum, sizeof(cs_sum));
 
 	if (uid)
 		addattr_l(&req.nh, sizeof(req), CGW_MOD_UID, &uid, sizeof(__u32));
